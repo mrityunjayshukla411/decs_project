@@ -9,7 +9,7 @@ from collections import OrderedDict,defaultdict
 import argparse
 import random
 
-CACHE_POLICY = "RANDOM"  # Can be "LRU", "LFU", or "RANDOM"
+CACHE_POLICY = "LRU" # Can be "LRU", "LFU", or "RANDOM"
 
 class CacheBase:
     """Base class for cache implementations"""

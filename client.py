@@ -62,7 +62,7 @@ class DistributedClient:
 
         # If best node's latency is too high, randomly select from top 3 performers
         if nodes_with_latency[0][1] > self.latency_threshold and len(nodes_with_latency) > 1:
-            candidates = nodes_with_latency[:min(3, len(nodes_with_latency))]
+            candidates = nodes_with_latency[:min(len(self.nodes), len(nodes_with_latency))]
             best_node = random.choice([node for node, _ in candidates])
 
         return best_node

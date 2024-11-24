@@ -42,6 +42,20 @@ PIDS+=($PID3)
 echo "Started node on port 5002 (PID $PID3)"
 sleep 2
 
+# Start fourth node
+taskset -c 3 python3 server.py --port 5003 --cluster localhost:5000 localhost:5001 localhost:5002 &
+PID4=$!
+PIDS+=($PID4)
+echo "Started node on port 5003 (PID $PID4)"
+sleep 2
+
+# Start fifth node
+taskset -c 4 python3 server.py --port 5004 --cluster localhost:5000 localhost:5001 localhost:5002 localhost:5003 &
+PID5=$!
+PIDS+=($PID5)
+echo "Started node on port 5004 (PID $PID5)"
+sleep 2
+
 echo "Cluster started. Press Ctrl+C to stop all nodes."
 
 # Wait for all background processes
