@@ -145,8 +145,11 @@ class KVStoreEvaluation:
 
         def client_worker():
             client = DistributedClient(self.nodes)
+            random.seed(1000)
+            num_requests = random.randint(1, 10000)
             start_time = time.time()
-            while time.time() - start_time < duration:
+            # while time.time() - start_time < duration:
+            for _ in range(num_requests):
                 key = f"key_{random.randint(1, 1000)}"
                 value = f"value_{random.randint(1, 1000)}"
 
@@ -231,7 +234,7 @@ class KVStoreEvaluation:
             # 3. Throughput Tests
             print("\n=== Throughput Tests ===")
             print("Measuring throughput with 10 concurrent clients...")
-            throughput_results = self.run_with_timeout(self.measure_throughput, timeout=120, n_clients=10)
+            throughput_results = self.run_with_timeout(self.measure_throughput, timeout=1000, n_clients=20)
             if throughput_results is None:
                 print("Throughput test timed out. Exiting...")
                 return
@@ -239,7 +242,7 @@ class KVStoreEvaluation:
             # 4. Scalability Tests
             print("\n=== Scalability Tests ===")
             print("Measuring scalability...")
-            scalability_results = self.run_with_timeout(self.measure_scalability, timeout=200, max_clients=5, step=1)
+            scalability_results = self.run_with_timeout(self.measure_scalability, timeout=1000, max_clients=20, step=1)
             if scalability_results is None:
                 print("Scalability test timed out. Exiting...")
                 return

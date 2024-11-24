@@ -5,15 +5,32 @@ import signal
 import hashlib
 import time
 from typing import Dict, List, Tuple, Optional, Set
-from collections import OrderedDict
+from collections import OrderedDict,defaultdict
 import argparse
+import random
 
-class LRUCache:
-    """Least Recently Used (LRU) cache implementation"""
+CACHE_POLICY = "LFU"  # Can be "LRU", "LFU", or "RANDOM"
+
+class CacheBase:
+    """Base class for cache implementations"""
     def __init__(self, capacity: int):
         self.capacity = capacity
-        self.cache = OrderedDict()
         self.lock = threading.Lock()
+
+    def get(self, key: str) -> Optional[str]:
+        raise NotImplementedError
+
+    def put(self, key: str, value: str):
+        raise NotImplementedError
+
+    def remove(self, key: str):
+        raise NotImplementedError
+
+class LRUCache(CacheBase):
+    """Least Recently Used (LRU) cache implementation"""
+    def __init__(self, capacity: int):
+        super().__init__(capacity)
+        self.cache = OrderedDict()
 
     def get(self, key: str) -> Optional[str]:
         """Get item from cache and move it to the end (most recently used)"""
@@ -38,6 +55,100 @@ class LRUCache:
         with self.lock:
             if key in self.cache:
                 del self.cache[key]
+
+class LFUCache(CacheBase):
+    """Least Frequently Used (LFU) cache implementation"""
+    def __init__(self, capacity: int):
+        super().__init__(capacity)
+        self.cache = {}  # key -> value
+        self.freq = defaultdict(set)  # frequency -> set of keys
+        self.key_freq = {}  # key -> frequency
+        self.min_freq = 0
+
+    def get(self, key: str) -> Optional[str]:
+        """Get item from cache and increment its frequency"""
+        if key in self.cache:
+            # Update frequency
+            old_freq = self.key_freq[key]
+            self.freq[old_freq].remove(key)
+            if not self.freq[old_freq] and old_freq == self.min_freq:
+                self.min_freq += 1
+
+            new_freq = old_freq + 1
+            self.freq[new_freq].add(key)
+            self.key_freq[key] = new_freq
+
+            return self.cache[key]
+        return None
+
+    def put(self, key: str, value: str):
+        """Add item to cache, remove least frequently used if at capacity"""
+        if key in self.cache:
+            self.cache[key] = value
+            self.get(key)  # Update frequency
+            return
+
+        if len(self.cache) >= self.capacity:
+            # Remove least frequently used item
+            lfu_keys = self.freq[self.min_freq]
+            lfu_key = next(iter(lfu_keys))
+            lfu_keys.remove(lfu_key)
+            del self.cache[lfu_key]
+            del self.key_freq[lfu_key]
+
+        # Add new item with frequency 1
+        self.cache[key] = value
+        self.key_freq[key] = 1
+        self.freq[1].add(key)
+        self.min_freq = 1
+
+    def remove(self, key: str):
+        """Remove item from cache"""
+        if key in self.cache:
+            freq = self.key_freq[key]
+            self.freq[freq].remove(key)
+            if not self.freq[freq] and freq == self.min_freq:
+                self.min_freq = min(self.freq.keys()) if self.freq else 0
+            del self.cache[key]
+            del self.key_freq[key]
+
+class RandomCache(CacheBase):
+    """Random eviction cache implementation"""
+    def __init__(self, capacity: int):
+        super().__init__(capacity)
+        self.cache = {}
+
+    def get(self, key: str) -> Optional[str]:
+        """Get item from cache"""
+        with self.lock:
+            return self.cache.get(key)
+
+    def put(self, key: str, value: str):
+        """Add item to cache, randomly remove an item if at capacity"""
+        with self.lock:
+            if key not in self.cache and len(self.cache) >= self.capacity:
+                # Randomly select a key to remove
+                random_key = random.choice(list(self.cache.keys()))
+                del self.cache[random_key]
+            self.cache[key] = value
+
+    def remove(self, key: str):
+        """Remove item from cache"""
+        with self.lock:
+            if key in self.cache:
+                del self.cache[key]
+
+def create_cache(capacity: int) -> CacheBase:
+    """Factory function to create cache based on global policy"""
+    if CACHE_POLICY == "LRU":
+        return LRUCache(capacity)
+    elif CACHE_POLICY == "LFU":
+        return LFUCache(capacity)
+    elif CACHE_POLICY == "RANDOM":
+        return RandomCache(capacity)
+    else:
+        raise ValueError(f"Unknown cache policy: {CACHE_POLICY}")
+    
 
 class Prefetcher:
     """Implements prefetching mechanism for frequently accessed keys"""
@@ -72,7 +183,7 @@ class DistributedNode:
         self.threads = []
 
         # Initialize cache and prefetcher
-        self.cache = LRUCache(capacity=1000)  # Cache for 1000 items
+        self.cache = create_cache(capacity=1000)  # Cache for 1000 items
         self.prefetcher = Prefetcher(threshold=5)
 
         # Prefetch queue and worker thread
