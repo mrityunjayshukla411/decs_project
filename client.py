@@ -12,7 +12,7 @@ class DistributedClient:
         for node in nodes:
             host, port = node.split(':')
             self.nodes.append((host, int(port)))
-        
+
         # Initialize latency tracking
         self.latency_history = defaultdict(list)  # Store recent latencies for each node
         self.window_size = 10  # Number of recent requests to consider for average
@@ -37,10 +37,10 @@ class DistributedClient:
     def select_best_node(self) -> Tuple[str, int]:
         """Select the node with the lowest average latency."""
         current_time = time.time()
-        
+
         # Remove nodes from failed set if they've timed out
         self.failed_nodes = {
-            node for node in self.failed_nodes 
+            node for node in self.failed_nodes
             if current_time - self.latency_history[node][-1] < self.failure_timeout
         }
 
@@ -59,7 +59,7 @@ class DistributedClient:
 
         # Select the node with lowest latency
         best_node = nodes_with_latency[0][0]
-        
+
         # If best node's latency is too high, randomly select from top 3 performers
         if nodes_with_latency[0][1] > self.latency_threshold and len(nodes_with_latency) > 1:
             candidates = nodes_with_latency[:min(3, len(nodes_with_latency))]
@@ -78,17 +78,17 @@ class DistributedClient:
 
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.settimeout(5.0)  # Set timeout for connections
-        
+
         start_time = time.time()
         try:
             client_socket.connect((host, port))
             client_socket.send(json.dumps(request).encode('utf-8'))
             response = client_socket.recv(1024).decode('utf-8')
-            
+
             # Track successful request latency
             latency = time.time() - start_time
             self.track_latency(node, latency)
-            
+
             return json.loads(response)
         except Exception as e:
             # Mark node as failed and track high latency
@@ -101,8 +101,8 @@ class DistributedClient:
     def execute_operation(self, operation: str, key: str, value: str = None) -> Dict[str, Any]:
         """Execute operation on the best available node."""
         last_error = None
-        retries = 2  # Number of retries before giving up
-        
+        retries = 3  # Number of retries before giving up
+
         for _ in range(retries):
             try:
                 node = self.select_best_node()
@@ -111,7 +111,7 @@ class DistributedClient:
             except Exception as e:
                 last_error = e
                 continue
-                
+
         raise Exception(f"Failed to execute operation after {retries} retries: {last_error}")
 
     # Rest of the methods (get, put, delete, update) remain the same

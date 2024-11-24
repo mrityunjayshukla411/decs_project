@@ -9,7 +9,7 @@ from collections import OrderedDict,defaultdict
 import argparse
 import random
 
-CACHE_POLICY = "LFU"  # Can be "LRU", "LFU", or "RANDOM"
+CACHE_POLICY = "RANDOM"  # Can be "LRU", "LFU", or "RANDOM"
 
 class CacheBase:
     """Base class for cache implementations"""
@@ -148,7 +148,7 @@ def create_cache(capacity: int) -> CacheBase:
         return RandomCache(capacity)
     else:
         raise ValueError(f"Unknown cache policy: {CACHE_POLICY}")
-    
+
 
 class Prefetcher:
     """Implements prefetching mechanism for frequently accessed keys"""
