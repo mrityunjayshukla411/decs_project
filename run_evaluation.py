@@ -45,7 +45,7 @@ def main():
     print("All nodes are available. Starting evaluation...")
 
     # Create evaluation directory
-    os.makedirs("evaluation_report", exist_ok=True)
+    os.makedirs("eval_report", exist_ok=True)
 
     try:
         # Run evaluation
@@ -53,12 +53,12 @@ def main():
         evaluator.run_full_evaluation()
 
         print("\nEvaluation completed successfully!")
-        print("Results are available in the 'evaluation_report' directory:")
-        print("- evaluation_report/summary.txt")
-        print("- evaluation_report/correctness.txt")
-        print("- evaluation_report/latencies.png")
-        print("- evaluation_report/throughput.png")
-        print("- evaluation_report/scalability.png")
+        print("Results are available in the 'eval_report' directory:")
+        print("- eval_report/summary.txt")
+        print("- eval_report/correctness.txt")
+        print("- eval_report/latencies.png")
+        print("- eval_report/throughput.png")
+        print("- eval_report/scalability.png")
 
     except Exception as e:
         print(f"Error during evaluation: {str(e)}")

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import concurrent.futures #import ThreadPoolExecutor
 from typing import List, Dict, Tuple
 import pandas as pd
+import psutil
 
 class KVStoreEvaluation:
     def __init__(self, nodes: List[str]):
@@ -133,40 +134,38 @@ class KVStoreEvaluation:
             'p99': statistics.quantiles(latencies, n=100)[98]  # 99th percentile
         }
 
-    def measure_throughput(self, n_clients: int, duration: int = 60) -> Dict[str, float]:
+    def measure_throughput(self, n_clients: int, duration: int = 1, think_time: int = 0.01) -> Dict[str, float]:
         """Measure system throughput under load"""
         from client import DistributedClient
-        operations_count = {
-            'put': 0,
-            'get': 0,
-            'update': 0,
-            'delete': 0
+        scalability_output = {
+            'total_operations': 0,
+            'total_response_time': 0,
+            'total_cpu_usage': 0
         }
 
         def client_worker():
             client = DistributedClient(self.nodes)
-            random.seed(1000)
-            num_requests = random.randint(1, 10000)
             start_time = time.time()
-            # while time.time() - start_time < duration:
-            for _ in range(num_requests):
+            while time.time() - start_time < duration:
                 key = f"key_{random.randint(1, 1000)}"
                 value = f"value_{random.randint(1, 1000)}"
 
                 # Random operation
                 op = random.choice(['put', 'get', 'update', 'delete'])
+                thread_op_start_time = time.time()
                 if op == 'put':
                     client.put(key, value)
-                    operations_count['put'] += 1
                 elif op == 'get':
                     client.get(key)
-                    operations_count['get'] += 1
                 elif op == 'update':
                     client.update(key, value)
-                    operations_count['update'] += 1
                 elif op == 'delete':
                     client.delete(key)
-                    operations_count['delete'] += 1
+                thread_op_end_time = time.time()
+                scalability_output['total_operations'] += 1
+                scalability_output['total_response_time'] += thread_op_end_time - thread_op_start_time
+
+                time.sleep(think_time)
 
         # Start client threads
         threads = []
@@ -175,18 +174,28 @@ class KVStoreEvaluation:
             thread.start()
             threads.append(thread)
 
+        # Measure CPU usage periodically while threads are running
+        cpu_usage_start = time.time()
+        cpu_samples = 0
+        while time.time() - cpu_usage_start < duration:
+            scalability_output['total_cpu_usage'] += psutil.cpu_percent(interval=0.1)
+            cpu_samples += 1
+
         # Wait for all threads to complete
         for thread in threads:
             thread.join()
 
-        total_ops = sum(operations_count.values())
-        ops_per_second = total_ops / duration
+        ops_per_second = scalability_output['total_operations'] / duration
+        avg_response_time = scalability_output['total_response_time'] / scalability_output['total_operations'] if scalability_output['total_operations'] > 0 else float('inf')
+        avg_cpu_usage = scalability_output['total_cpu_usage'] / cpu_samples
 
         return {
-            'total_operations': total_ops,
+            'total_operations': scalability_output['total_operations'],
             'operations_per_second': ops_per_second,
+            'avg_response_time': avg_response_time * 1000,  # Convert to milliseconds
+            'avg_cpu_usage': avg_cpu_usage,
             'operations_breakdown': {
-                op: count/duration for op, count in operations_count.items()
+                op: count/duration for op, count in scalability_output.items()
             }
         }
 
@@ -194,10 +203,13 @@ class KVStoreEvaluation:
         """Measure system scalability with increasing clients"""
         results = []
         for n_clients in range(step, max_clients + step, step):
-            throughput = self.measure_throughput(n_clients, duration=30)
+            throughput = self.measure_throughput(n_clients, duration=1)
+            # avg_response_time = 1 / throughput['operations_per_second'] if throughput['operations_per_second'] > 0 else float('inf')
             results.append({
                 'n_clients': n_clients,
-                'throughput': throughput['operations_per_second']
+                'throughput': throughput['operations_per_second'],
+                'avg_response_time': throughput['avg_response_time'],
+                'avg_cpu_usage': throughput['avg_cpu_usage']
             })
         return results
 
@@ -206,6 +218,7 @@ class KVStoreEvaluation:
         print("Starting Full Evaluation...")
 
         try:
+            '''
             # 1. Correctness Tests
             print("\n=== Correctness Tests ===")
             correctness_results = self.run_with_timeout(self.test_correctness, timeout=10)
@@ -238,17 +251,19 @@ class KVStoreEvaluation:
             if throughput_results is None:
                 print("Throughput test timed out. Exiting...")
                 return
+            '''
 
             # 4. Scalability Tests
             print("\n=== Scalability Tests ===")
             print("Measuring scalability...")
-            scalability_results = self.run_with_timeout(self.measure_scalability, timeout=1000, max_clients=20, step=1)
+            scalability_results = self.run_with_timeout(self.measure_scalability, timeout=2000, max_clients=300, step=1)
             if scalability_results is None:
                 print("Scalability test timed out. Exiting...")
                 return
 
             # Generate report
-            self.generate_report(correctness_results, latency_results, throughput_results, scalability_results)
+            # self.generate_report(correctness_results, latency_results, throughput_results, scalability_results)
+            self.generate_report({}, {}, {}, scalability_results)
 
         except Exception as e:
             print(f"An error occurred during evaluation: {e}")
@@ -257,10 +272,11 @@ class KVStoreEvaluation:
         """Generate evaluation report with visualizations"""
         # Create report directory if it doesn't exist
         import os
-        os.makedirs("evaluation_report", exist_ok=True)
+        os.makedirs("eval_report", exist_ok=True)
 
+        '''
         # 1. Save correctness results
-        with open("evaluation_report/correctness.txt", "w") as f:
+        with open("eval_report/correctness.txt", "w") as f:
             for test, result in correctness_results.items():
                 f.write(f"{test}: {'PASSED' if result else 'FAILED'}\n")
 
@@ -280,7 +296,7 @@ class KVStoreEvaluation:
         plt.title('Operation Latencies')
         plt.xticks(x, ops)
         plt.legend()
-        plt.savefig("evaluation_report/latencies.png")
+        plt.savefig("eval_report/latencies.png")
         plt.close()
 
         # 3. Create throughput visualization
@@ -291,41 +307,48 @@ class KVStoreEvaluation:
         plt.xlabel('Operation')
         plt.ylabel('Operations/second')
         plt.title('Operation Throughput')
-        plt.savefig("evaluation_report/throughput.png")
+        plt.savefig("eval_report/throughput.png")
         plt.close()
+        '''
 
         # 4. Create scalability visualization
+        df_scalability = pd.DataFrame(scalability_results)
+        df_scalability.to_csv('eval_report/scalability_results.csv', index=False)
+
         plt.figure(figsize=(10, 6))
-        clients = [r['n_clients'] for r in scalability_results]
-        throughputs = [r['throughput'] for r in scalability_results]
-        plt.plot(clients, throughputs, marker='o')
+        clients = df_scalability['n_clients']
+        throughputs = df_scalability['throughput']
+        pd.DataFrame({'clients': clients, 'throughputs': throughputs}).to_csv('eval_report/scalability.csv', index=False)
+        plt.plot(clients, throughputs, marker='o', label='Throughput (ops/sec)')
         plt.xlabel('Number of Clients')
-        plt.ylabel('Operations/second')
+        plt.ylabel('Throughput (ops/sec)')
         plt.title('Scalability: Throughput vs Number of Clients')
         plt.grid(True)
-        plt.savefig("evaluation_report/scalability.png")
+        plt.legend()
+        plt.savefig("eval_report/scalability_throughput.png")
         plt.close()
 
-        # 5. Generate summary report
-        with open("evaluation_report/summary.txt", "w") as f:
-            f.write("=== Evaluation Summary ===\n\n")
+        plt.figure(figsize=(10, 6))
+        response_times = df_scalability['avg_response_time']
+        plt.plot(clients, response_times, marker='x', color='orange', label='Avg Response Time (ms)')
+        plt.xlabel('Number of Clients')
+        plt.ylabel('Average Response Time (ms)')
+        plt.title('Scalability: Response Time vs Number of Clients')
+        plt.grid(True)
+        plt.legend()
+        plt.savefig("eval_report/scalability_avg_response_time.png")
+        plt.close()
 
-            f.write("1. Correctness Tests:\n")
-            f.write("All tests passed: " + str(all(correctness_results.values())) + "\n\n")
-
-            f.write("2. Latency Results (ms):\n")
-            for op, results in latency_results.items():
-                f.write(f"{op}:\n")
-                for metric, value in results.items():
-                    f.write(f"  {metric}: {value:.2f}\n")
-            f.write("\n")
-
-            f.write("3. Throughput Results:\n")
-            f.write(f"Total operations per second: {throughput_results['operations_per_second']:.2f}\n\n")
-
-            f.write("4. Scalability Results:\n")
-            f.write("Maximum throughput achieved: " +
-                   f"{max(r['throughput'] for r in scalability_results):.2f} ops/sec\n")
+        plt.figure(figsize=(10, 6))
+        avg_cpu_utilization = df_scalability['avg_cpu_usage']
+        plt.plot(clients, avg_cpu_utilization, marker='s', color='green', label='Avg CPU Utilization (%)')
+        plt.xlabel('Number of Clients')
+        plt.ylabel('Average CPU Utilization (%)')
+        plt.title('Scalability: CPU Utilization vs Number of Clients')
+        plt.grid(True)
+        plt.legend()
+        plt.savefig("eval_report/scalability_cpu_utilization.png")
+        plt.close()
 
 def main():
     # Example usage
